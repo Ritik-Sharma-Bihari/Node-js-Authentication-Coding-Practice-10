@@ -26,12 +26,13 @@ const initializeDBAndServer = async () => {
 initializeDBAndServer()
 
 // authentication  part-3 ---------------------
-const longer = (request, response, next) => {
-  console.log(request.query)
+// const longer = (request, response, next) => {
+//   console.log(request.query)
 
-  // to run the next function
-  next()
-}
+//   // to run the next function
+//   next()
+//
+// }
 
 const authenticationToken = (request, response, next) => {
   let jwtToken
@@ -56,32 +57,57 @@ const authenticationToken = (request, response, next) => {
   }
 }
 
+// for given the response in userFrindly way  of districts data-----
+console.log('----------')
+const convertDbObjectToResponseObjectOfDistrics = dbObject => {
+  return {
+    districtId: dbObject.district_id,
+    districtName: dbObject.district_name,
+    stateId: dbObject.state_id,
+    cases: dbObject.cases,
+    cured: dbObject.cured,
+    active: dbObject.active,
+    deaths: dbObject.deaths,
+  }
+}
+
+// for given the response in userFrindly way  of states data-----
+
+const convertDbObjectToResponseObjectOfStates = dbObject => {
+  return {
+    stateId: dbObject.state_id,
+    stateName: dbObject.state_name,
+    population: dbObject.population,
+  }
+}
+
+// response for statistics measures.... api-8
+
 //Get Books API
 app.get('/states/', authenticationToken, async (request, response) => {
   const getBooksQuery = `
             SELECT
               *
             FROM
-             state
-            ORDER BY
-             state_id;`
+             state;`
+
   const booksArray = await db.all(getBooksQuery)
-  response.send(booksArray)
+  //response.send(booksArray) for sending the response..
+  response.send(
+    booksArray.map(eachPlayer =>
+      convertDbObjectToResponseObjectOfStates(eachPlayer),
+    ),
+  )
 })
 
-//Get Book API
-app.get('/states/:stateId/', async (request, response) => {
+//Get  API
+app.get('/states/:stateId/', authenticationToken, async (request, response) => {
   const {stateId} = request.params
-  const getBookQuery = `
-      SELECT
-       *
-      FROM
-       state 
-      WHERE
-       state_id = ${stateId};
-    `
+  const getBookQuery = `SELECT * FROM state WHERE state_id = ${stateId} `
   const book = await db.get(getBookQuery)
-  response.send(book)
+  //response.send(book)
+
+  response.send(convertDbObjectToResponseObjectOfStates(book))
 })
 
 //User Register API
@@ -145,5 +171,115 @@ app.get('/profile/', authenticationToken, async (request, response) => {
   const userData = await db.get(selectProfileQuery)
   response.send(userData)
 })
+
+// api-4 for distics..
+app.post('/districts/', authenticationToken, async (request, response) => {
+  const {districtName, stateId, cases, cured, active, deaths} = request.body
+  const insertQueryDistrics = `
+  
+  insert into district(district_name,state_id,cases,cured,active,deaths) values(
+
+    '${districtName}',${stateId},${cases}, ${cured},${active},${deaths}
+  ) 
+  `
+
+  const districInfo = await db.run(insertQueryDistrics)
+  response.send('District Successfully Added')
+  console.log(districInfo)
+})
+
+// api-5 for /districts/:districtId/
+
+app.get(
+  '/districts/:districtId/',
+  authenticationToken,
+  async (request, response) => {
+    const {districtId} = request.params
+
+    const selectADistrictQuery = `select * from  district where district_id = ${districtId}`
+
+    const disticsDetail = await db.get(selectADistrictQuery)
+    //response.send(disticsDetail)
+    response.send(convertDbObjectToResponseObjectOfDistrics(disticsDetail))
+  },
+)
+
+// api-6 to detete `/districts/:districtId/
+
+app.delete(
+  '/districts/:districtId/',
+  authenticationToken,
+  async (request, response) => {
+    ////
+    const {districtId} = request.params
+    const deleteQuery = `delete from district where district_id = ${districtId}`
+    await db.run(deleteQuery)
+    response.send('District Removed')
+  },
+)
+
+console.log('hi')
+// api - 7 /districts/:districtId/
+
+app.put(
+  '/districts/:districtId/',
+  authenticationToken,
+  async (request, response) => {
+    const {districtId} = request.params
+    const {districtName, stateId, cases, cured, active, deaths} = request.body
+
+    const UpdateDistrictQuery = `update district set 
+          district_name = '${districtName}',
+          state_id = ${stateId},
+          cases = ${cases},
+          cured = ${cured},
+          active = ${active},
+          deaths = ${deaths}
+      where
+    district_id = ${districtId}`
+    await db.run(UpdateDistrictQuery)
+    response.send('District Details Updated')
+  },
+)
+
+// api-8  /states/:stateId/stats/ for statices..
+
+app.get(
+  '/states/:stateId/stats/',
+  authenticationToken,
+  async (request, response) => {
+    const {stateId} = request.params
+    const getPlayerQuery = `
+    SELECT
+      SUM(district.cases) AS totalCases,
+      SUM(district.cured) AS totalCured,
+      SUM(district.active) AS totalActive,
+      SUM(district.deaths) AS totalDeaths
+    FROM
+      district
+      join 
+      state 
+      on district.state_id = state.state_id
+    WHERE
+      state.state_id = ${stateId}`
+
+    try {
+      const state = await db.get(getPlayerQuery)
+      if (state) {
+        response.send({
+          totalCases: state.totalCases,
+          totalCured: state.totalCured,
+          totalActive: state.totalActive,
+          totalDeaths: state.totalDeaths,
+        })
+      } else {
+        response.status(404).send('state not found')
+      }
+    } catch (error) {
+      console.error(`Error fetching player scores: ${error.message}`)
+      response.status(401).send('Invalid JWT Token')
+    }
+  },
+)
 
 module.exports = app
